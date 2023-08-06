@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Highcharts Regression Plot</title>
+
+    <!-- Include Highcharts library -->
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com/modules/export-data.js"></script>
+    <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.9.1/math.js" integrity="sha512-iC7V/1gOwGXzYGJ9f860Jq9K/YrL+AsSI7k/03F98EkX1GEsP2VjWdHgWpwhinDTe+HGznwCnVdR2d/o2In9bA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body style="margin: 0; padding: 0;">
+    <style>
+        fieldset {
+            left: -250px;
+            opacity: 0.2;
+        }
+        fieldset:hover, fieldset:focus-within {
+            left: 0;
+            opacity: 1;
+        }
+        .highcharts-data-table {
+            border: 1px solid black;
+            position: absolute;
+            bottom: 30px;
+            right: -400px;
+            max-height: calc(100vh - 80px);
+            overflow-y: auto;
+            opacity: 0.2;
+            transition-duration: 1s;
+        }
+        .highcharts-data-table:hover {
+            right: 5px;
+            opacity: 1;
+        }
+    </style>
+    <main style="position: relative; height: 100vh; overflow: hidden;">
+        <!-- Container for the chart -->
+        <div id="regressionPlotContainer" style="width: 100vw; height: 100vh;"></div>
+        <!-- Container for regression controls -->
+        <fieldset style="position: absolute; top: 20px; transition-duration: 1s;">
+            <legend>Regression Controls</legend>
+            <section style="width: 300px;">
+                <div>
+                    <label for="inputFunction">Enter Function:</label><br>
+                    <input type="text" id="inputFunction" value="2*x" style="width: 100%; margin-bottom: 10px;" required>
+                </div>
+                <div>
+                    <label for="inputIntervalStart">Enter Interval Start:</label><br>
+                    <input type="number" step="0.01" id="inputIntervalStart" value="0" style="width: 100%; margin-bottom: 10px;" required>
+                </div>
+                <div>
+                    <label for="inputIntervalEnd">Enter Interval End:</label><br>
+                    <input type="number" step="0.01" id="inputIntervalEnd" value="10" style="width: 100%; margin-bottom: 10px;" required>
+                </div>
+                <div>
+                    <label for="inputIntervalStep">Enter Interval Step:</label><br>
+                    <input type="number" step="0.01" id="inputIntervalStep" value="1" style="width: 100%; margin-bottom: 10px;" required>
+                </div>
+                <div>
+                    <label for="inputErrorScaler">Enter Error Scaler:</label><br>
+                    <input type="number" id="inputErrorScaler" value="1" style="width: 100%; margin-bottom: 10px;" required>
+                </div>
+                <div>
+                    <label for="inputRegressionDegree">Enter Regression Degree:</label><br>
+                    <input type="number" id="inputRegressionDegree" value="1" style="width: 100%; margin-bottom: 10px;" required>
+                </div>
+                <div>
+                    <input type="submit" value="Go!" onclick="this.blur(); perform_regression()" style="width: 100%; margin-bottom: 10px;">
+                </div>
+            </section>
+        </fieldset>
+        <!-- Container for regression results -->
+        <fieldset style="position: absolute; top: 400px; transition-duration: 1s;">
+            <legend>Regression Results</legend>
+            <section style="width: 300px; max-height: 300px; overflow-y: auto;">
+                <h3>Value of weights: <span id="copyText" style="background-color: wheat; padding: 5px; border-radius: 5px; font-size: medium; font-weight: 400; cursor: pointer;">Copy</span></h3>
+                <table id="resultTable" style="background-color: white;"></table>
+            </section>
+        </fieldset>
+    </main>
+
+    <script>
+    document.getElementById('inputFunction').focus()
+
+    function generatePoints(start, end, step, fn, includeIndex = true) {
+        if(includeIndex)
+        return Array.from({ length: Math.floor(Math.abs(end - start)/step)+1 }, (_, index) => [ start + index * step, fn(start + index * step) ])
+        return Array.from({ length: Math.floor(Math.abs(end - start)/step)+1 }, (_, index) => fn(start + index * step))
+    }
+
+    function regression(x_t, r_t, degree = 1) {
+        const d = Array.from({ length: x_t.length }, (_, index) => generatePoints(0, degree, 1, x => index**x, false))
+        // console.log(d)
+        const a = math.multiply(math.transpose(d), d)
+        // console.log(a)
+        const a_inv = math.inv(a)
+        // console.log(a_inv)
+        return math.multiply(math.multiply(a_inv, math.transpose(d)), r_t)
+    }
+
+    function *normal_error() {
+        // Experimentally good value
+        const NUM_TIMES = 20
+        while(true) {
+            let error_val = 0
+            for(let i = 0; i < NUM_TIMES; ++i)
+            error_val += Math.random()
+            yield error_val / NUM_TIMES - 0.5
+        }
+    }
+
+    const error = normal_error()
+    
+    function perform_regression() {
+
+        const INTERVAL_START = +document.getElementById('inputIntervalStart').value //0
+        const INTERVAL_END = +document.getElementById('inputIntervalEnd').value //11
+        const INTERVAL_STEP = +document.getElementById('inputIntervalStep').value //0.1
+        const ERROR_SCALER = +document.getElementById('inputErrorScaler').value //50
+        const REGRESSION_DEGREE = +document.getElementById('inputRegressionDegree').value //10
+        const NUM_PHASES = 2
+        const INSTANCES_PER_PHASE = Math.floor((INTERVAL_END - INTERVAL_START) / NUM_PHASES)
+        let func, raw_data_points
+        try {
+            func = math.compile(document.getElementById('inputFunction').value) //10 * Math.sin(2*Math.PI*x/INSTANCES_PER_PHASE)
+        } catch(err) {
+            alert('Error in parsing formula entered! ' + err)
+            return
+        }
+
+        try {
+            raw_data_points = generatePoints(INTERVAL_START, INTERVAL_END, INTERVAL_STEP, x => func.evaluate({ x: x }))
+        } catch(err) {
+            alert('Error in evaluating formula entered! Only variable allowed \"x\". ' + err)
+            return
+        }
+        const r_t = raw_data_points.map(([x, y]) => y)
+        // console.log(r_t)
+    
+        const data_points = raw_data_points.map(([x, y]) => [x, y + ERROR_SCALER * error.next().value])
+        const x_t = data_points.map(([x, y]) => y)
+        // console.log(x_t)
+    
+        const weights = regression(x_t, r_t, REGRESSION_DEGREE)
+        const regression_points = raw_data_points.map(([x, _]) => [x, weights.reduce((sum, wi, i) => sum + wi * (x/INTERVAL_STEP) ** i, 0)])
+        // console.log(weights)
+
+        let innerHTML = ''
+        weights.forEach((wi, i) => innerHTML += `<tr><td>w${ i } =</td><td>${ wi }</td></tr>`)
+        document.getElementById('resultTable').innerHTML = innerHTML
+        document.getElementById('copyText').textContent = 'Copy'
+        document.getElementById('copyText').onclick = e => navigator.clipboard.writeText(weights).then(e.target.textContent = 'Copied')
+    
+        // Data for the regression plot
+        const chartData = {
+            title: {
+                text: 'Regression Plot'
+            },
+            xAxis: {
+                title: {
+                text: 'X-axis'
+                }
+            },
+            yAxis: {
+                title: {
+                text: 'Y-axis'
+                }
+            },
+            series: [
+                {
+                    name: 'Raw Data Points',
+                    data: raw_data_points /*[
+                    [5, 10],
+                    [8, 15],
+                    [12, 6],
+                    [16, 20],
+                    [20, 12]
+                    ]*/
+                },
+                {
+                    name: 'Data Points',
+                    data: data_points
+                },
+                {
+                    name: 'Regression Points',
+                    data: regression_points
+                }
+            ]
+        }
+    
+        // Create the regression plot
+        Highcharts.chart('regressionPlotContainer', chartData)
+        // Create the context highcharts menu
+        // document.querySelector('.highcharts-a11y-proxy-button.highcharts-no-tooltip').click()
+        // document.querySelector('.highcharts-a11y-proxy-button.highcharts-no-tooltip').blur()
+        // document.querySelector('.highcharts-menu').lastElementChild.addEventListener('click', evt => {
+        //     document.querySelector('.highcharts-data-table').style.display = 'absolute'
+        // })
+    }
+    </script>
+</body>
+</html>
